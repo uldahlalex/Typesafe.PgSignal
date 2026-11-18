@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The library (in a real app: a git submodule, like Typesafe.PgTopics is for the library). It brings
+         Typesafe.PgTopics and Npgsql along. -->
+    <PackageReference Include="TypedSignalR.Client.DevTools" Version="1.2.4" />
+    <ProjectReference Include="../../src/Typesafe.PgSignal/Typesafe.PgSignal.csproj" />
+
+    <!-- [Hub] and [TranspilationSource] for the TypeScript generator (client: bun run generate), and analyzers that
+         flag a type used by a hub without [TranspilationSource]. -->
+    <PackageReference Include="TypedSignalR.Client.TypeScript.Attributes" Version="1.18.0" />
+    <PackageReference Include="TypedSignalR.Client.TypeScript.Analyzer" Version="1.18.0" />
+    <PackageReference Include="Tapper.Analyzer" Version="1.15.1" />
+  </ItemGroup>
+
+</Project>

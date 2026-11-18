@@ -1,0 +1,19 @@
+{
+  "name": "typesafe-pgsignal",
+  "version": "0.1.0",
+  "description": "Client for Typesafe.PgSignal: live, filtered lists from Postgres over SignalR.",
+  "type": "module",
+  "exports": {
+    ".": "./src/client.ts",
+    "./react": "./src/react.ts"
+  },
+  "peerDependencies": {
+    "@microsoft/signalr": ">=8",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
+}

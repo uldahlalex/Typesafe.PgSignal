@@ -1,0 +1,23 @@
+{
+  "name": "pgsignal-example-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "cd .. && dotnet tsrts --project server/Server.csproj --output client/src/generated",
+    "dev": "bun --hot src/index.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@microsoft/signalr": "^10.0.0",
+    "react": "^19",
+    "react-dom": "^19",
+    "typesafe-pgsignal": "file:../../src/typesafe-pgsignal"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}

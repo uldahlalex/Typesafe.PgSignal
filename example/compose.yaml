@@ -1,0 +1,14 @@
+# The example's Postgres, with sql/schema.sql applied on first start. Port 5433 so it doesn't clash with a local
+# Postgres. To start over: docker compose down -v && docker compose up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:

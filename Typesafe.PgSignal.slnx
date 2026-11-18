@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Typesafe.PgSignal/Typesafe.PgSignal.csproj" />
+  </Folder>
+  <Folder Name="/example/">
+    <Project Path="example/server/Server.csproj" />
+  </Folder>
+</Solution>
