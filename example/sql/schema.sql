@@ -1,15 +1,13 @@
 -- The example's database. Applied automatically by compose.yaml on first start; sqlc reads it too (sqlc.yaml).
 
 -- ── Live data (Typesafe.PgSignal) ────────────────────────────────────────────────────────────────────────────────
--- Every channel. sqlc generates Db.Channel from this, and server/Tables.cs names its tables through it, so a channel
--- is spelled only here.
-CREATE TYPE channel AS ENUM ('order_changes');
-
--- From the library (../sql/pgsignal.sql): sends {"new": row, "old": row} for every committed change.
+-- From the library (../sql/pgsignal.sql): sends {"table": ..., "new": row, "old": row} on channel "pgsignal" for every
+-- committed change to a table that has the trigger below.
 CREATE FUNCTION pgsignal_notify() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-    PERFORM pg_notify(TG_ARGV[0]::channel::text, json_build_object(
+    PERFORM pg_notify('pgsignal', json_build_object(
+        'table', TG_TABLE_NAME,
         'new', CASE WHEN TG_OP <> 'DELETE' THEN row_to_json(NEW) END,
         'old', CASE WHEN TG_OP <> 'INSERT' THEN row_to_json(OLD) END)::text);
     RETURN NULL;
@@ -30,4 +28,4 @@ CREATE TABLE orders (
 
 CREATE TRIGGER orders_pgsignal
 AFTER INSERT OR UPDATE OR DELETE ON orders
-FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('order_changes');
+FOR EACH ROW EXECUTE FUNCTION pgsignal_notify();

@@ -63,7 +63,7 @@
 
     "tr46": ["tr46@0.0.3", "", {}, "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="],
 
-    "typesafe-pgsignal": ["typesafe-pgsignal@file:../../src/typesafe-pgsignal", { "peerDependencies": { "@microsoft/signalr": ">=8", "react": ">=18" }, "optionalPeers": ["react"] }],
+    "typesafe-pgsignal": ["typesafe-pgsignal@file:../../src/typesafe-pgsignal", { "peerDependencies": { "@microsoft/signalr": ">=8", "react": ">=18" } }],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 

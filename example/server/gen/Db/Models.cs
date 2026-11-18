@@ -5,35 +5,6 @@ using System.Linq;
 
 namespace Db;
 public readonly record struct Order(long Id, string CustomerName, long TotalCents, OrderStatus Status, DateTime CreatedAt);
-public enum Channel
-{
-    Invalid = 0, // reserved for invalid enum value
-    OrderChanges = 1
-}
-
-public static class ChannelExtensions
-{
-    private static readonly Dictionary<string, Channel> StringToEnum = new Dictionary<string, Channel>()
-    {
-        [string.Empty] = Channel.Invalid,
-        ["order_changes"] = Channel.OrderChanges
-    };
-    public static Channel ToChannel(this string me)
-    {
-        return StringToEnum[me];
-    }
-
-    private static readonly Dictionary<Channel, string> EnumToString = new Dictionary<Channel, string>()
-    {
-        [Channel.Invalid] = string.Empty,
-        [Channel.OrderChanges] = "order_changes"
-    };
-    public static string Stringify(this Channel me)
-    {
-        return EnumToString[me];
-    }
-}
-
 public enum OrderStatus
 {
     Invalid = 0, // reserved for invalid enum value

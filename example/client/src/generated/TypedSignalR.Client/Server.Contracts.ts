@@ -40,6 +40,10 @@ export type IOrderHub = {
     * @returns Transpiled from System.Threading.Tasks.Task
     */
     deleteOrder(id: number): Promise<void>;
+    /**
+    * @returns Transpiled from System.Threading.Tasks.Task
+    */
+    do(): Promise<void>;
 }
 
 export type IOrderReceiver = {

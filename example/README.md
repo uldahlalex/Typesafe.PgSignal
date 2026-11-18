@@ -4,7 +4,7 @@ A live order list: database-first (SQL schema, sqlc), SignalR with a typed TypeS
 Typesafe.PgSignal for the live part. Everything here is app code; the library is in `../src`.
 
 ```
-sql/schema.sql        the database, incl. the channel enum and the pgsignal trigger
+sql/schema.sql        the database, incl. the pgsignal trigger
 sql/queries.sql       queries and commands (C# generated with sqlc into server/gen/Db)
 server/
   Contracts/IOrderHub.cs   the API: [Hub] interface + the types it uses ([TranspilationSource])
@@ -12,8 +12,8 @@ server/
   Program.cs               SignalR + PgSignal<OrderHub> + CORS
 client/
   src/generated/           generated from Contracts/ by `bun run generate`
-  src/signal.ts            the connection, the PgSignalClient, the typed hub proxy
-  src/App.tsx              two live lists (all, and filtered by status) and the commands
+  src/signal.ts            the connection and the typed hub proxy
+  src/Example.tsx          a live list (useLive with Do()) and a form that creates orders
 compose.yaml          Postgres on port 5433 with sql/schema.sql applied
 ```
 
@@ -38,10 +38,10 @@ Open two tabs, or change data with `docker compose exec postgres psql -U postgre
 
 ## Making another table live
 
-1. `sql/schema.sql`: a value in the `channel` enum, and
-   `CREATE TRIGGER x_pgsignal AFTER INSERT OR UPDATE OR DELETE ON x FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('x_changes');`
+1. `sql/schema.sql`:
+   `CREATE TRIGGER x_pgsignal AFTER INSERT OR UPDATE OR DELETE ON x FOR EACH ROW EXECUTE FUNCTION pgsignal_notify();`
 2. `sql/queries.sql`: a list query with `sqlc.embed(x)`; regenerate.
 3. `server/Contracts`: a `[TranspilationSource]` DTO and `Task<XDto[]> SubscribeToXs()` on the hub interface;
-   implement it in the hub with `await signal.Subscribe<Db.X>(Context.ConnectionId, Db.Channel.XChanges.Stringify(), XDto.From)`
+   implement it in the hub with `signal.Subscribe<Db.X>(Context.ConnectionId, "x", XDto.From)`
    followed by the query.
-4. `bun run generate`, then `useSync(signal, hub, "subscribeToXs")`.
+4. `bun run generate`, then `useLive(connection, hub, "subscribeToXs", () => hub.subscribeToXs())`.

@@ -99,6 +99,10 @@ class IOrderHub_HubProxy implements IOrderHub {
     public readonly deleteOrder = async (id: number): Promise<void> => {
         return await this.connection.invoke("DeleteOrder", id);
     }
+
+    public readonly do = async (): Promise<void> => {
+        return await this.connection.invoke("Do");
+    }
 }
 
 

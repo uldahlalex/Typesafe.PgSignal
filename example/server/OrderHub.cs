@@ -1,5 +1,4 @@
 using Db;
-using static Db.ChannelExtensions;   // Stringify() for the channel enum
 using Microsoft.AspNetCore.SignalR;
 using Npgsql;
 using Server.Contracts;
@@ -8,16 +7,14 @@ using OrderStatus = Server.Contracts.OrderStatus;
 
 namespace Server;
 
-// No publishing here: the trigger in sql/schema.sql publishes every committed change on channel order_changes.
+// No publishing here: the trigger in sql/schema.sql publishes every committed change to orders.
 public sealed class OrderHub(PgSignal<OrderHub> signal, Db.QueriesSql queries) : Hub<IOrderReceiver>, IOrderHub
 {
-    private static readonly string OrderChanges = Db.Channel.OrderChanges.Stringify();
-
     // ── Queries: subscribe first, then return the rows as they are now ──────────────────────────────────────────
 
     public async Task<OrderDto[]> SubscribeToAllOrders()
     {
-        await signal.Subscribe<Db.Order>(Context.ConnectionId, OrderChanges, OrderDto.From);
+        signal.Subscribe<Db.Order>(Context.ConnectionId, "orders", OrderDto.From);
         var rows = await queries.ListOrdersAsync(Context.ConnectionAborted);
         return [.. rows.Select(r => OrderDto.From(r.Order!.Value))];
     }
@@ -26,14 +23,15 @@ public sealed class OrderHub(PgSignal<OrderHub> signal, Db.QueriesSql queries) :
     {
         var dbStatus = status.ToDb();
         // `where` decides which changes this caller gets; the query below decides the snapshot. Keep them the same rule.
-        await signal.Subscribe<Db.Order>(Context.ConnectionId, OrderChanges, OrderDto.From, where: o => o.Status == dbStatus);
+        signal.Subscribe<Db.Order>(Context.ConnectionId, "orders", OrderDto.From, where: o => o.Status == dbStatus);
         var rows = await queries.ListOrdersByStatusAsync(new(dbStatus), Context.ConnectionAborted);
         return [.. rows.Select(r => OrderDto.From(r.Order!.Value))];
     }
 
-    public async Task Do()
+    public Task Do()
     {
-        await signal.Subscribe<Order>(Context.ConnectionId, nameof(Do), d => d);
+        signal.Subscribe<Order>(Context.ConnectionId, "orders", OrderDto.From);
+        return Task.CompletedTask;
     }
 
     // ── Commands ────────────────────────────────────────────────────────────────────────────────────────────────
