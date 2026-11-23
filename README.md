@@ -94,18 +94,46 @@ Then `bun install` (React 18 or later is the other peer dependency). `--asm` mat
 `LiveChange<T>`, which lives in the library. Bun copies `file:` packages into `node_modules`, so after updating the
 submodule run `rm -rf node_modules/typesafe-pgsignal && bun install` again.
 
-**4. Database:** copy the function from `lib/Typesafe.PgSignal/sql/pgsignal.sql` into your schema (see below).
+**4. Database:** add the function and a trigger per table to your schema; see Setup below.
 
 ## Setup
 
-**Database.** Add the function from `sql/pgsignal.sql` to your schema, and a trigger per table. Its argument is the
-name of the table's C# row type (sqlc's `Db.Order` for `orders`), because `Watch<Db.Order, ...>` gets the changes sent
-under `typeof(Db.Order).Name`:
+**Database.** Paste this into your schema file and change the three marked places. The function goes in once,
+*before* any trigger that uses it; without it, `CREATE TRIGGER` fails with
+`ERROR: function pgsignal_notify() does not exist`.
 
 ```sql
-CREATE TRIGGER orders_pgsignal AFTER INSERT OR UPDATE OR DELETE ON orders
-FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('Order');
+-- ── Typesafe.PgSignal (once per database; the same as sql/pgsignal.sql) ─────────────────────────────────────────
+CREATE FUNCTION pgsignal_notify() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM pg_notify('pgsignal', json_build_object(
+        'table', COALESCE(TG_ARGV[0], TG_TABLE_NAME),
+        'new', CASE WHEN TG_OP <> 'DELETE' THEN row_to_json(NEW) END,
+        'old', CASE WHEN TG_OP <> 'INSERT' THEN row_to_json(OLD) END)::text);
+    RETURN NULL;
+END;
+$$;
+
+-- ── Your tables: one trigger per table clients can watch ─────────────────────────────────────────────────────────
+CREATE TABLE products (                                     -- (1) your table
+    id    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,  --     the client matches rows by a numeric id
+    name  text   NOT NULL,
+    price bigint NOT NULL
+);
+
+CREATE TRIGGER products_pgsignal                            -- (2) any trigger name
+AFTER INSERT OR UPDATE OR DELETE ON products                -- (1) the same table
+FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('Product');   -- (3) the C# row type's name: Watch<Db.Product, ...>
 ```
+
+(3) must be exactly the name of the type you give `Watch`: `typeof(Db.Product).Name`. sqlc makes the name singular
+and PascalCase (`products` → `Product`, `order_lines` → `OrderLine`); check `Models.cs` after generating. If they
+differ, the stream sends its snapshot and then no changes, without an error.
+
+Tables in another schema than `public`: write the table with its schema (`ON shop.products`) and keep the function
+in `public`, or call it as `public.pgsignal_notify('Product')` if `public` is not on the `search_path`. Check the
+generated type name too; sqlc may prefix the schema (`ShopProduct`).
 
 **Server.** Register it and write Watch methods:
 

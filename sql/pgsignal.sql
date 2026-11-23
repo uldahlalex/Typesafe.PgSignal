@@ -1,4 +1,5 @@
--- Typesafe.PgSignal: copy this into your schema (it is plain SQL, so it belongs with your other DDL).
+-- Typesafe.PgSignal: copy this into your schema (it is plain SQL, so it belongs with your other DDL), before any
+-- trigger that uses it. README.md (Setup, Database) has the same function with an example table; keep the two equal.
 --
 -- pgsignal_notify() sends every committed insert, update and delete on the one channel "pgsignal", as
 -- {"table": <name>, "new": <row or null>, "old": <row or null>}. Nothing is sent for a rolled-back transaction.
