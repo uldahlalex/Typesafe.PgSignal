@@ -49,6 +49,53 @@ with different arguments, and each gets only its own changes. The first item is 
 Stopping the stream on the client (useLive does it on unmount) cancels it on the server, which removes the
 subscription.
 
+## Installation
+
+Neither half is on NuGet or npm yet: both come from this repository, as source. The steps below assume an app with a
+`server/` (ASP.NET Core) and a `client/` (React) folder, like `example/`.
+
+**1. The source**, as a git submodule (so the app pins a version):
+
+```bash
+git submodule add https://github.com/uldahlalex/Typesafe.PgSignal.git lib/Typesafe.PgSignal
+```
+
+Whoever clones the app later needs `git clone --recurse-submodules`, or `git submodule update --init` afterwards.
+
+**2. Server: Typesafe.PgSignal** (the C# project; it brings Npgsql and Tapper.Attributes):
+
+```bash
+dotnet add server reference lib/Typesafe.PgSignal/src/Typesafe.PgSignal/Typesafe.PgSignal.csproj
+```
+
+And the TypeScript generator, which turns the hub interface into the typed client proxy:
+
+```bash
+dotnet add server package TypedSignalR.Client.TypeScript.Attributes --version 1.18.0   # [Hub], [Receiver]
+dotnet add server package TypedSignalR.Client.TypeScript.Analyzer --version 1.18.0     # flags unsupported hub types
+dotnet add server package Tapper.Analyzer --version 1.15.1                             # flags a missing [TranspilationSource]
+dotnet new tool-manifest
+dotnet tool install TypedSignalR.Client.TypeScript.Generator --version 1.18.0          # the dotnet tsrts command
+```
+
+**3. Client: typesafe-pgsignal** (the React hook). In `client/package.json`:
+
+```json
+"scripts": {
+  "generate": "cd .. && dotnet tsrts --project server/Server.csproj --output client/src/generated --asm"
+},
+"dependencies": {
+  "@microsoft/signalr": "^10.0.0",
+  "typesafe-pgsignal": "file:../lib/Typesafe.PgSignal/src/typesafe-pgsignal"
+}
+```
+
+Then `bun install` (React 18 or later is the other peer dependency). `--asm` matters: it makes the generator also write
+`LiveChange<T>`, which lives in the library. Bun copies `file:` packages into `node_modules`, so after updating the
+submodule run `rm -rf node_modules/typesafe-pgsignal && bun install` again.
+
+**4. Database:** copy the function from `lib/Typesafe.PgSignal/sql/pgsignal.sql` into your schema (see below).
+
 ## Setup
 
 **Database.** Add the function from `sql/pgsignal.sql` to your schema, and a trigger per table. Its argument is the
@@ -60,7 +107,7 @@ CREATE TRIGGER orders_pgsignal AFTER INSERT OR UPDATE OR DELETE ON orders
 FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('Order');
 ```
 
-**Server.** Reference `src/Typesafe.PgSignal/Typesafe.PgSignal.csproj` (it brings Npgsql and Tapper.Attributes). Then:
+**Server.** Register it and write Watch methods:
 
 ```csharp
 builder.Services.AddSingleton(NpgsqlDataSource.Create(connectionString));
@@ -79,10 +126,9 @@ public sealed class OrderHub(PgSignal signal, Db.QueriesSql queries) : Hub, IOrd
 sqlc's `Db.Order`): snake_case column names, enum labels like `'pending'`. `snapshot` returns `TRow`s too, and `map`
 turns each into what the client gets.
 
-Run the TypeScript generator with `--asm`, so it also writes `LiveChange<T>` from the library:
-`dotnet tsrts --project server/Server.csproj --output client/src/generated --asm`.
+Then `bun run generate` in `client/` to get the typed proxy.
 
-**Client.** Add the package (`"typesafe-pgsignal": "file:<path>/src/typesafe-pgsignal"`) and `@microsoft/signalr`:
+**Client.** Create the connection and the generated proxy once:
 
 ```ts
 export const connection = new HubConnectionBuilder().withUrl(".../hubs/orders").withAutomaticReconnect().build();
@@ -98,8 +144,6 @@ const filtered = useLive(connection, () => orderHub.watchOrdersWithStatus(status
 `useLive(connection, watch, deps)`: `watch` starts the stream, and `deps` are the values it uses, like `useEffect`.
 It waits for the connection, starts the stream, and starts it again when it fails (a lost connection, an error on the
 server); the new snapshot then replaces the list. Items are matched by `id`.
-
-Bun copies `file:` packages into `node_modules`, so after changing the library run `bun install` in the app again.
 
 ## Rules worth knowing
 
