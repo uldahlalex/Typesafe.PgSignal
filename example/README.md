@@ -16,7 +16,8 @@ client/
   src/signal.ts            the connection and the typed hub proxy
   src/Example.tsx          a board: one live column per status (useLive), and a form that creates orders
 compose.yaml          Postgres on port 5433 with sql/schema.sql applied
-scripts/              pgschema: plan.sh / apply.sh make the database match sql/schema.sql, dump.sh prints it
+scripts/              pgschema: plan.sh / apply.sh make the database match sql/schema.sql, dump.sh prints it;
+                      sqlc.sh generates server/gen/Db from the SQL
 ```
 
 ## Run
@@ -33,8 +34,8 @@ Open two tabs, or change data with `docker compose exec postgres psql -U postgre
 
 | Changed | Run |
 |---|---|
-| `sql/schema.sql` | `./scripts/plan.sh` to see the SQL, `./scripts/apply.sh` to run it (keeps the data), then the sqlc line below |
-| `sql/*.sql` | `docker run --rm -e SQLCCACHE=/cache -v ~/.cache/sqlc:/cache -v $PWD:/src -w /src sqlc/sqlc generate` (here) |
+| `sql/schema.sql` | `./scripts/plan.sh` to see the SQL, `./scripts/apply.sh` to run it (keeps the data), then `./scripts/sqlc.sh` |
+| `sql/queries.sql` | `./scripts/sqlc.sh` (regenerates `server/gen/Db`) |
 | `server/Contracts/` | `bun run generate` in `client/` (the tool is in `dotnet-tools.json`; `dotnet tool restore` once) |
 | the library's TS (`../src/typesafe-pgsignal`) | `rm -rf node_modules/typesafe-pgsignal && bun install` in `client/` (Bun copies `file:` packages) |
 
@@ -59,7 +60,7 @@ in psql first, then apply.
 1. `sql/schema.sql`:
    `CREATE TRIGGER x_pgsignal AFTER INSERT OR UPDATE OR DELETE ON x FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('X');`
    (the argument is the name of sqlc's row type, `Db.X`)
-2. `sql/queries.sql`: a list query with `sqlc.embed(x)`; regenerate.
+2. `sql/queries.sql`: a list query with `sqlc.embed(x)`; `./scripts/sqlc.sh`.
 3. `server/Contracts`: a `[TranspilationSource]` DTO and
    `IAsyncEnumerable<LiveChange<XDto>> WatchXs(CancellationToken ct)` on the hub interface; implement it in the hub
    by returning `signal.Watch<Db.X, XDto>(snapshot: <the list query>, map: XDto.From, where: null, ct)`.

@@ -135,43 +135,195 @@ Tables in another schema than `public`: write the table with its schema (`ON sho
 in `public`, or call it as `public.pgsignal_notify('Product')` if `public` is not on the `search_path`. Check the
 generated type name too; sqlc may prefix the schema (`ShopProduct`).
 
-**Server.** Register it and write Watch methods:
+**Queries.** Watch needs a query for its snapshot. Return the whole row with `sqlc.embed`, so the snapshot rows have
+the same type (`Db.Product`) as the changes. `sql/queries.sql`:
 
-```csharp
-builder.Services.AddSingleton(NpgsqlDataSource.Create(connectionString));
-builder.Services.AddSignalR();
-builder.Services.AddSingleton<PgSignal>();                                    // the subscriptions
-builder.Services.AddHostedService(sp => sp.GetRequiredService<PgSignal>());   // the LISTEN loop
-app.MapHub<OrderHub>("/hubs/orders");
+```sql
+-- name: ListProducts :many
+SELECT sqlc.embed(products) FROM products
+ORDER BY id;
 
-public sealed class OrderHub(PgSignal signal, Db.QueriesSql queries) : Hub, IOrderHub
+-- name: ListProductsCheaperThan :many
+SELECT sqlc.embed(products) FROM products
+WHERE price < @max_price
+ORDER BY id;
+
+-- name: CreateProduct :one
+INSERT INTO products (name, price)
+VALUES (@name, @price)
+RETURNING id;
+```
+
+Run sqlc (`sqlc generate`, or the example's `scripts/sqlc.sh`); it writes `Db.Product` and `Db.QueriesSql` with a
+method per query. A table in another schema than `public` needs an alias: `SELECT sqlc.embed(p) FROM shop.products p`.
+
+**Server.** The connection string, `server/appsettings.json` (Npgsql's `key=value;` format; `Keepalive=30` makes a
+silently dropped LISTEN connection noticed):
+
+```json
 {
-    // Watch methods as above; nothing to clean up on disconnect, SignalR cancels the streams
+  "ConnectionStrings": {
+    "Postgres": "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres;Keepalive=30"
+  }
 }
 ```
 
-`Watch<TRow, TItem>` reads the rows from the notification as `TRow` (usually your query generator's row type, e.g.
-sqlc's `Db.Order`): snake_case column names, enum labels like `'pending'`. `snapshot` returns `TRow`s too, and `map`
-turns each into what the client gets.
+`server/Program.cs`:
 
-Then `bun run generate` in `client/` to get the typed proxy.
+```csharp
+using Npgsql;
+using Server;
+using Typesafe.PgSignal;
 
-**Client.** Create the connection and the generated proxy once:
+var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("Postgres")
+    ?? throw new InvalidOperationException("ConnectionStrings:Postgres is missing in appsettings.json");
+
+builder.Services.AddSingleton(NpgsqlDataSource.Create(connectionString));   // PgSignal's LISTEN connection
+builder.Services.AddSingleton(new Db.QueriesSql(connectionString));         // sqlc's generated queries
+builder.Services.AddSignalR();
+
+// PgSignal is used by the hub (Watch) and runs in the background (LISTEN), so it is registered twice.
+builder.Services.AddSingleton<PgSignal>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PgSignal>());
+
+// The client's dev server runs on another port. SignalR sends credentials, so the origin must be named.
+builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
+    .WithOrigins("http://localhost:3000")
+    .AllowAnyHeader()
+    .AllowAnyMethod()
+    .AllowCredentials()));
+
+var app = builder.Build();
+app.UseCors();
+app.MapHub<ProductHub>("/hubs/products");
+app.Run();
+```
+
+`server/Contracts/IProductHub.cs`, the API. Watch methods return `IAsyncEnumerable<LiveChange<T>>`; the
+`CancellationToken` is SignalR's and fires when the client stops the stream:
+
+```csharp
+using Tapper;
+using TypedSignalR.Client;
+using Typesafe.PgSignal;
+
+namespace Server.Contracts;
+
+// The API the client sees. `bun run generate` turns it into a typed TypeScript proxy.
+[Hub]
+public interface IProductHub
+{
+    // Queries (live): SignalR streams, first the rows now, then every change
+    IAsyncEnumerable<LiveChange<ProductDto>> WatchAllProducts(CancellationToken ct);
+    IAsyncEnumerable<LiveChange<ProductDto>> WatchProductsCheaperThan(long maxPrice, CancellationToken ct);
+
+    // Commands: their effect reaches every client through the streams
+    Task<long> CreateProduct(string name, long price);
+}
+
+// What the client gets for a row. Needs an Id: the client matches rows by it.
+[TranspilationSource]
+public sealed record ProductDto(long Id, string Name, long Price)
+{
+    public static ProductDto From(Db.Product row) => new(row.Id, row.Name, row.Price);
+}
+```
+
+`server/ProductHub.cs`. `Watch<Db.Product, ...>` gets the changes the trigger sends as `'Product'`:
+
+```csharp
+using Microsoft.AspNetCore.SignalR;
+using Server.Contracts;
+using Typesafe.PgSignal;
+
+namespace Server;
+
+public sealed class ProductHub(PgSignal signal, Db.QueriesSql queries) : Hub, IProductHub
+{
+    public IAsyncEnumerable<LiveChange<ProductDto>> WatchAllProducts(CancellationToken ct) =>
+        signal.Watch<Db.Product, ProductDto>(
+            snapshot: async () => (await queries.ListProductsAsync(ct)).Select(r => r.Product!.Value),
+            map: ProductDto.From,
+            where: null,
+            ct);
+
+    // `where` decides which changes the stream gets, the query decides the snapshot: keep them the same rule.
+    public IAsyncEnumerable<LiveChange<ProductDto>> WatchProductsCheaperThan(long maxPrice, CancellationToken ct) =>
+        signal.Watch<Db.Product, ProductDto>(
+            snapshot: async () => (await queries.ListProductsCheaperThanAsync(new(maxPrice), ct)).Select(r => r.Product!.Value),
+            map: ProductDto.From,
+            where: p => p.Price < maxPrice,
+            ct);
+
+    public async Task<long> CreateProduct(string name, long price)
+    {
+        var row = await queries.CreateProductAsync(new(name, price), Context.ConnectionAborted);
+        return row!.Value.Id;
+    }
+}
+```
+
+(With the DevTools GUI, TypedSignalR.Client.DevTools, the hub must derive from `Hub<T>`: add an empty
+`[Receiver] public interface IProductReceiver;` and write `Hub<IProductReceiver>`. The example does this.)
+
+Then `bun run generate` in `client/` (the script from Installation). It writes `client/src/generated/`: the typed proxy,
+`ProductDto`, and `LiveChange<T>`.
+
+**Client.** `client/src/signal.ts`, the connection and the generated proxy, once for the app:
 
 ```ts
-export const connection = new HubConnectionBuilder().withUrl(".../hubs/orders").withAutomaticReconnect().build();
-export const orderHub = getHubProxyFactory("IOrderHub").createHubProxy(connection);    // generated
+import { HubConnectionBuilder } from "@microsoft/signalr";
+import { getHubProxyFactory } from "./generated/TypedSignalR.Client";
+
+// One connection to the hub; Program.cs maps it at /hubs/products.
+export const connection = new HubConnectionBuilder()
+  .withUrl("http://localhost:5080/hubs/products")
+  .withAutomaticReconnect()
+  .build();
+
+// The typed proxy, generated from IProductHub by `bun run generate`.
+export const productHub = getHubProxyFactory("IProductHub").createHubProxy(connection);
+
 connection.start();
 ```
 
+A component, `client/src/Products.tsx`:
+
 ```tsx
-const orders = useLive(connection, () => orderHub.watchAllOrders());
-const filtered = useLive(connection, () => orderHub.watchOrdersWithStatus(status), [status]);
+import { useState } from "react";
+import { useLive } from "typesafe-pgsignal";
+import { connection, productHub } from "./signal";
+
+export default function Products() {
+  const [maxPrice, setMaxPrice] = useState(100);
+
+  // Two live lists. Each useLive is its own stream; deps restart it when maxPrice changes.
+  const all = useLive(connection, () => productHub.watchAllProducts());
+  const cheap = useLive(connection, () => productHub.watchProductsCheaperThan(maxPrice), [maxPrice]);
+
+  return (
+    <main>
+      <button onClick={() => productHub.createProduct("Coffee", 45)}>Add coffee</button>
+      <label>
+        Cheaper than <input type="number" value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} />
+      </label>
+
+      <h2>All products ({all.length})</h2>
+      <ul>{all.map((p) => <li key={p.id}>{p.name}: {p.price}</li>)}</ul>
+
+      <h2>Cheaper than {maxPrice} ({cheap.length})</h2>
+      <ul>{cheap.map((p) => <li key={p.id}>{p.name}: {p.price}</li>)}</ul>
+    </main>
+  );
+}
 ```
 
 `useLive(connection, watch, deps)`: `watch` starts the stream, and `deps` are the values it uses, like `useEffect`.
 It waits for the connection, starts the stream, and starts it again when it fails (a lost connection, an error on the
-server); the new snapshot then replaces the list. Items are matched by `id`.
+server); the new snapshot then replaces the list. Items are matched by `id`. Unmounting, or new `deps`, stops the
+stream on the server too.
 
 ## Rules worth knowing
 
