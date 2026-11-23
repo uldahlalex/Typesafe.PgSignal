@@ -1,42 +1,39 @@
 using Tapper;
 using TypedSignalR.Client;
+using Typesafe.PgSignal;
 
 namespace Server.Contracts;
 
 /// <summary>
 /// The API the browser sees. `bun run generate` in client/ turns this interface (and the types it uses, marked
-/// [TranspilationSource]) into a typed TypeScript proxy: orderHub.subscribeToAllOrders(), orderHub.createOrder(...).
+/// [TranspilationSource]) into a typed TypeScript proxy: orderHub.watchAllOrders(), orderHub.createOrder(...).
 ///
-/// Queries are Subscribe* methods: they return the rows right now, and from then on the client gets every change to
-/// them (useSync on the client keeps the list current). Commands change data and return at most an id; every client,
-/// including the caller, sees the result through its subscriptions.
+/// Queries are Watch* methods: SignalR streams. The first item is the rows right now, then every change to them
+/// (useLive on the client keeps a list current). Each call is its own stream, so the same method can run several
+/// times with different arguments. The CancellationToken is SignalR's: it fires when the client stops the stream.
+///
+/// Commands change data and return at most an id; every client, including the caller, sees the result through its
+/// streams.
 /// </summary>
 [Hub]
 public interface IOrderHub
 {
     // Queries (live)
-    Task<OrderDto[]> SubscribeToAllOrders();
-    Task<OrderDto[]> SubscribeToOrdersWithStatus(OrderStatus status);
+    IAsyncEnumerable<LiveChange<OrderDto>> WatchAllOrders(CancellationToken ct);
+    IAsyncEnumerable<LiveChange<OrderDto>> WatchOrdersWithStatus(OrderStatus status, CancellationToken ct);
 
     // Commands
     Task<long> CreateOrder(string customerName, long totalCents);
     Task UpdateOrderStatus(long id, OrderStatus status);
     Task DeleteOrder(long id);
-    Task Do();
 }
 
 /// <summary>
-/// What the server sends to the browser: the three messages of Typesafe.PgSignal (the names are the constants in
-/// PgSignal.cs). The library's TypeScript client handles them; this interface only exists so the DevTools GUI
-/// (/signalr-dev) can show them. DevTools needs the hub to be Hub<IOrderReceiver> to find it.
+/// Empty: the server sends nothing on its own, everything arrives on the Watch* streams. It exists because the DevTools
+/// GUI (/signalr-dev) only finds hubs that derive from Hub&lt;T&gt; (its analyzer reports TSRD009 otherwise).
 /// </summary>
 [Receiver]
-public interface IOrderReceiver
-{
-    Task PgSignalUpsert(string subscription, OrderDto item);
-    Task PgSignalDelete(string subscription, OrderDto item);
-    Task PgSignalResync(string subscription);
-}
+public interface IOrderReceiver;
 
 /// <summary>An order as clients see it. Built from the database row in one place, <see cref="From"/>.</summary>
 [TranspilationSource]

@@ -9,11 +9,11 @@ sql/queries.sql       queries and commands (C# generated with sqlc into server/g
 server/
   Contracts/IOrderHub.cs   the API: [Hub] interface + the types it uses ([TranspilationSource])
   OrderHub.cs              implements it: subscribe methods (queries) and commands
-  Program.cs               SignalR + PgSignal<OrderHub> + CORS
+  Program.cs               SignalR + PgSignal + CORS
 client/
   src/generated/           generated from Contracts/ by `bun run generate`
-  src/signal.ts            the connection, the typed hub proxy, and on(): typed connection.on for IOrderReceiver
-  src/Example.tsx          a live list (on() + Do()) and a form that creates orders
+  src/signal.ts            the connection and the typed hub proxy
+  src/Example.tsx          a board: one live column per status (useLive), and a form that creates orders
 compose.yaml          Postgres on port 5433 with sql/schema.sql applied
 scripts/              pgschema: plan.sh / apply.sh make the database match sql/schema.sql, dump.sh prints it
 ```
@@ -59,7 +59,7 @@ in psql first, then apply.
    `CREATE TRIGGER x_pgsignal AFTER INSERT OR UPDATE OR DELETE ON x FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('X');`
    (the argument is the name of sqlc's row type, `Db.X`)
 2. `sql/queries.sql`: a list query with `sqlc.embed(x)`; regenerate.
-3. `server/Contracts`: a `[TranspilationSource]` DTO and `Task<XDto[]> SubscribeToXs()` on the hub interface;
-   implement it in the hub with `signal.Subscribe<Db.X>(Context.ConnectionId, XDto.From)`
-   followed by the query.
-4. `bun run generate`, then `useLive(connection, hub, "subscribeToXs", () => hub.subscribeToXs())`.
+3. `server/Contracts`: a `[TranspilationSource]` DTO and
+   `IAsyncEnumerable<LiveChange<XDto>> WatchXs(CancellationToken ct)` on the hub interface; implement it in the hub
+   by returning `signal.Watch<Db.X, XDto>(snapshot: <the list query>, map: XDto.From, where: null, ct)`.
+4. `bun run generate`, then `useLive(connection, () => hub.watchXs())`.

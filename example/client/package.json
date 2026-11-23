@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "generate": "cd .. && dotnet tsrts --project server/Server.csproj --output client/src/generated",
+    "generate": "cd .. && dotnet tsrts --project server/Server.csproj --output client/src/generated --asm",
     "dev": "bun --hot src/index.ts",
     "typecheck": "tsc --noEmit -p ."
   },

@@ -1,4 +1,1 @@
 Hvad synes jeg?
-
-
-- i hvilket omfang er "pgSignalUpsert" og "pgSignalDelete" det rigtige approach og hvilke alternativer er der? 

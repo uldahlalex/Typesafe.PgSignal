@@ -13,9 +13,9 @@ builder.Services.AddSingleton(NpgsqlDataSource.Create(connectionString));
 
 builder.Services.AddSignalR();
 
-// Live subscriptions for OrderHub's clients: a singleton the hub uses, which also runs in the background (LISTEN).
-builder.Services.AddSingleton<PgSignal<OrderHub>>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<PgSignal<OrderHub>>());
+// Live streams for the hub: a singleton the hub uses, which also runs in the background (LISTEN).
+builder.Services.AddSingleton<PgSignal>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PgSignal>());
 
 // The Bun dev server runs on another port. SignalR sends credentials, so the origin must be named (no AllowAnyOrigin).
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p

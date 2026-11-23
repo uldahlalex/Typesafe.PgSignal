@@ -26,7 +26,7 @@ CREATE TABLE orders (
     created_at    timestamptz  NOT NULL DEFAULT now()
 );
 
--- 'Order' is the name of sqlc's row type, Db.Order: Subscribe<Db.Order> gets the changes sent under that name.
+-- 'Order' is the name of sqlc's row type, Db.Order: Watch<Db.Order, ...> gets the changes sent under that name.
 CREATE TRIGGER orders_pgsignal
 AFTER INSERT OR UPDATE OR DELETE ON orders
 FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('Order');

@@ -8,30 +8,22 @@ using OrderStatus = Server.Contracts.OrderStatus;
 namespace Server;
 
 // No publishing here: the trigger in sql/schema.sql publishes every committed change to orders.
-public sealed class OrderHub(PgSignal<OrderHub> signal, Db.QueriesSql queries) : Hub<IOrderReceiver>, IOrderHub
+public sealed class OrderHub(PgSignal signal, Db.QueriesSql queries) : Hub<IOrderReceiver>, IOrderHub
 {
-    // ── Queries: subscribe first, then return the rows as they are now ──────────────────────────────────────────
+    // ── Queries: streams of the rows now, then every change ─────────────────────────────────────────────────────
 
-    public async Task<OrderDto[]> SubscribeToAllOrders()
-    {
-        signal.Subscribe<Db.Order>(Context.ConnectionId, OrderDto.From);
-        var rows = await queries.ListOrdersAsync(Context.ConnectionAborted);
-        return [.. rows.Select(r => OrderDto.From(r.Order!.Value))];
-    }
+    public IAsyncEnumerable<LiveChange<OrderDto>> WatchAllOrders(CancellationToken ct) =>
+        signal.Watch<Db.Order, OrderDto>(
+            snapshot: async () => (await queries.ListOrdersAsync(ct)).Select(r => r.Order!.Value),
+            map: OrderDto.From, where: null, ct);
 
-    public async Task<OrderDto[]> SubscribeToOrdersWithStatus(OrderStatus status)
+    public IAsyncEnumerable<LiveChange<OrderDto>> WatchOrdersWithStatus(OrderStatus status, CancellationToken ct)
     {
         var dbStatus = status.ToDb();
-        // `where` decides which changes this caller gets; the query below decides the snapshot. Keep them the same rule.
-        signal.Subscribe<Db.Order>(Context.ConnectionId, OrderDto.From, where: o => o.Status == dbStatus);
-        var rows = await queries.ListOrdersByStatusAsync(new(dbStatus), Context.ConnectionAborted);
-        return [.. rows.Select(r => OrderDto.From(r.Order!.Value))];
-    }
-
-    public Task Do()
-    {
-        signal.Subscribe<Db.Order>(Context.ConnectionId, OrderDto.From);
-        return Task.CompletedTask;
+        // `where` decides which changes this stream gets; the query decides the snapshot. Keep them the same rule.
+        return signal.Watch<Db.Order, OrderDto>(
+            snapshot: async () => (await queries.ListOrdersByStatusAsync(new(dbStatus), ct)).Select(r => r.Order!.Value),
+            map: OrderDto.From, where: o => o.Status == dbStatus, ct);
     }
 
     // ── Commands ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -60,11 +52,5 @@ public sealed class OrderHub(PgSignal<OrderHub> signal, Db.QueriesSql queries) :
     {
         var deleted = await queries.DeleteOrderAsync(new(id), Context.ConnectionAborted);
         if (deleted == 0) throw new HubException($"Order {id} not found.");
-    }
-
-    public override Task OnDisconnectedAsync(Exception? exception)
-    {
-        signal.RemoveConnection(Context.ConnectionId);
-        return base.OnDisconnectedAsync(exception);
     }
 }

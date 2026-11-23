@@ -1,104 +1,72 @@
 import { useEffect, useState } from "react";
-import { HubConnectionState, type HubConnection } from "@microsoft/signalr";
-
-// Must match the constants in src/Typesafe.PgSignal/PgSignal.cs.
-const Upsert = "PgSignalUpsert";
-const Delete = "PgSignalDelete";
-const Resync = "PgSignalResync";
+import { HubConnectionState, type HubConnection, type IStreamResult, type ISubscription } from "@microsoft/signalr";
 
 type Item = { id: number };
+
+// The shape of LiveChange<T> in src/Typesafe.PgSignal/PgSignal.cs. The generated type (generated/Typesafe.PgSignal.ts)
+// fits it; the server sends null for the two that aren't set.
+type LiveChange<T> = { snapshot?: T[] | null; upserted?: T | null; deleted?: T | null };
 
 /**
  * A list kept in sync with the server:
  *
- *   const orders = useLive(connection, orderHub, "subscribeToAllOrders", () => orderHub.subscribeToAllOrders());
- *   const paid = useLive(connection, orderHub, "subscribeToOrdersWithStatus", () => orderHub.subscribeToOrdersWithStatus(status), [status]);
+ *   const orders = useLive(connection, () => orderHub.watchAllOrders());
+ *   const paid = useLive(connection, () => orderHub.watchOrdersWithStatus(status), [status]);
  *
- * `subscription` is the name of the hub method `load` calls: the server tags every change with it. It must be a method
- * of `hub` (the typed proxy), so a typo doesn't compile; `hub` is only there for that check. `load` subscribes and
- * returns the rows right now (the snapshot). Put the values `load` uses in `deps`, like useEffect.
+ * `watch` calls a Watch* hub method: a SignalR stream that sends the rows right now (a snapshot), then every change.
+ * Put the values `watch` uses in `deps`, like useEffect. Each call of the hook is its own stream, so the same hub
+ * method can be used any number of times with different arguments.
  *
- * Flow: register the change handlers, then call `load`. Changes that arrive before the snapshot are held and applied
- * after it. On a resync from the server, or a reconnect, `load` runs again.
+ * Flow: wait until the connection is up, start the stream, apply what it sends. Unmounting (or new deps) stops the
+ * stream, which also ends it on the server. If the stream fails (a lost connection, an error on the server) it starts
+ * again once the connection is back, and the new snapshot replaces the list.
  */
-export function useLive<H extends object, T extends Item>(
+export function useLive<T extends Item>(
   connection: HubConnection,
-  hub: H,
-  subscription: keyof H & string,
-  load: () => Promise<T[]>,
+  watch: () => IStreamResult<LiveChange<T>>,
   deps: unknown[] = [],
 ): T[] {
   const [items, setItems] = useState<T[]>([]);
 
   useEffect(() => {
-    const name = subscription.toLowerCase();
     let stopped = false;
-    let loaded = false;
-    let held: [string, T][] = []; // changes that arrive before the snapshot
+    let subscription: ISubscription<LiveChange<T>> | undefined;
 
-    // Subscribe and get the snapshot: wait until the connection is up, retry on failure.
-    async function reload() {
-      loaded = false;
-      held = [];
-      while (!stopped) {
-        if (connection.state !== HubConnectionState.Connected) {
-          await new Promise((r) => setTimeout(r, 100));
-          continue;
-        }
-        try {
-          const snapshot = await load();
-          if (stopped) return;
-          setItems(held.reduce((list, [method, item]) => apply(list, method, item), snapshot));
-          held = [];
-          loaded = true;
-          return;
-        } catch (err) {
-          console.warn(`${subscription} failed, retrying in 2 s:`, err);
-          await new Promise((r) => setTimeout(r, 2000));
-        }
+    async function start() {
+      while (!stopped && connection.state !== HubConnectionState.Connected) {
+        await new Promise((r) => setTimeout(r, 100));
       }
-    }
+      if (stopped) return;
 
-    function onChange(method: string) {
-      return (sub: string, item: T) => {
-        if (sub !== name) return; // another component's subscription
-        if (!loaded) {
-          held.push([method, item]);
-          return;
-        }
-        setItems((list) => apply(list, method, item));
-      };
+      subscription = watch().subscribe({
+        next: (change) => setItems((list) => apply(list, change)),
+        error: (err) => {
+          console.warn("Live stream failed, starting it again in 1 s:", err);
+          setTimeout(start, 1000);
+        },
+        complete: () => {},
+      });
     }
-    const onUpsert = onChange(Upsert);
-    const onDelete = onChange(Delete);
-    const onResync = (sub: string) => {
-      if (sub === name) reload();
-    };
-
-    connection.on(Upsert, onUpsert);
-    connection.on(Delete, onDelete);
-    connection.on(Resync, onResync);
-    // A reconnect is a new connection id: the server forgot our subscription. SignalR has no way to remove an
-    // onreconnected callback, so after unmount this one just does nothing.
-    connection.onreconnected(() => {
-      if (!stopped) reload();
-    });
-    reload();
+    start();
 
     return () => {
       stopped = true;
-      connection.off(Upsert, onUpsert);
-      connection.off(Delete, onDelete);
-      connection.off(Resync, onResync);
+      subscription?.dispose();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `load` is a new function every render; `deps` says when it changes
-  }, [connection, subscription, ...deps]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `watch` is a new function every render; `deps` says when it changes
+  }, [connection, ...deps]);
 
   return items;
 }
 
-function apply<T extends Item>(list: T[], method: string, item: T): T[] {
-  if (method === Delete) return list.filter((x) => x.id !== item.id);
-  if (!list.some((x) => x.id === item.id)) return [item, ...list];
-  return list.map((x) => (x.id === item.id ? item : x));
+function apply<T extends Item>(list: T[], change: LiveChange<T>): T[] {
+  if (change.snapshot) return change.snapshot;
+
+  const deleted = change.deleted;
+  if (deleted) return list.filter((x) => x.id !== deleted.id);
+
+  const upserted = change.upserted;
+  if (!upserted) return list;
+  if (!list.some((x) => x.id === upserted.id)) return [upserted, ...list];
+  return list.map((x) => (x.id === upserted.id ? upserted : x));
 }

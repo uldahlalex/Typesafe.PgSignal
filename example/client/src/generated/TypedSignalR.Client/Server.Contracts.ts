@@ -3,26 +3,32 @@
 /* tslint:disable */
 // @ts-nocheck
 import type { IStreamResult, Subject } from '@microsoft/signalr';
+import type { LiveChange } from '../Typesafe.PgSignal';
 import type { OrderDto, OrderStatus } from '../Server.Contracts';
 
 /**
 * The API the browser sees. `bun run generate` in client/ turns this interface (and the types it uses, marked
-* [TranspilationSource]) into a typed TypeScript proxy: orderHub.subscribeToAllOrders(), orderHub.createOrder(...).
+* [TranspilationSource]) into a typed TypeScript proxy: orderHub.watchAllOrders(), orderHub.createOrder(...).
 * 
-* Queries are Subscribe* methods: they return the rows right now, and from then on the client gets every change to
-* them (useSync on the client keeps the list current). Commands change data and return at most an id; every client,
-* including the caller, sees the result through its subscriptions.
+* Queries are Watch* methods: SignalR streams. The first item is the rows right now, then every change to them
+* (useLive on the client keeps a list current). Each call is its own stream, so the same method can run several
+* times with different arguments. The CancellationToken is SignalR's: it fires when the client stops the stream.
+* 
+* Commands change data and return at most an id; every client, including the caller, sees the result through its
+* streams.
 */
 export type IOrderHub = {
     /**
-    * @returns Transpiled from System.Threading.Tasks.Task<Server.Contracts.OrderDto[]>
+    * @param ct Transpiled from System.Threading.CancellationToken
+    * @returns Transpiled from System.Collections.Generic.IAsyncEnumerable<Typesafe.PgSignal.LiveChange<Server.Contracts.OrderDto>>
     */
-    subscribeToAllOrders(): Promise<OrderDto[]>;
+    watchAllOrders(): IStreamResult<LiveChange<OrderDto>>;
     /**
     * @param status Transpiled from Server.Contracts.OrderStatus
-    * @returns Transpiled from System.Threading.Tasks.Task<Server.Contracts.OrderDto[]>
+    * @param ct Transpiled from System.Threading.CancellationToken
+    * @returns Transpiled from System.Collections.Generic.IAsyncEnumerable<Typesafe.PgSignal.LiveChange<Server.Contracts.OrderDto>>
     */
-    subscribeToOrdersWithStatus(status: OrderStatus): Promise<OrderDto[]>;
+    watchOrdersWithStatus(status: OrderStatus): IStreamResult<LiveChange<OrderDto>>;
     /**
     * @param customerName Transpiled from string
     * @param totalCents Transpiled from long
@@ -40,29 +46,12 @@ export type IOrderHub = {
     * @returns Transpiled from System.Threading.Tasks.Task
     */
     deleteOrder(id: number): Promise<void>;
-    /**
-    * @returns Transpiled from System.Threading.Tasks.Task
-    */
-    do(): Promise<void>;
 }
 
+/**
+* Empty: the server sends nothing on its own, everything arrives on the Watch* streams. It exists because the DevTools
+* GUI (/signalr-dev) only finds hubs that derive from Hub<T> (its analyzer reports TSRD009 otherwise).
+*/
 export type IOrderReceiver = {
-    /**
-    * @param subscription Transpiled from string
-    * @param item Transpiled from Server.Contracts.OrderDto
-    * @returns Transpiled from System.Threading.Tasks.Task
-    */
-    pgSignalUpsert(subscription: string, item: OrderDto): Promise<void>;
-    /**
-    * @param subscription Transpiled from string
-    * @param item Transpiled from Server.Contracts.OrderDto
-    * @returns Transpiled from System.Threading.Tasks.Task
-    */
-    pgSignalDelete(subscription: string, item: OrderDto): Promise<void>;
-    /**
-    * @param subscription Transpiled from string
-    * @returns Transpiled from System.Threading.Tasks.Task
-    */
-    pgSignalResync(subscription: string): Promise<void>;
 }
 

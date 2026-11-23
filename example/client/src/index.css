@@ -49,3 +49,10 @@ th { color: var(--muted); font-weight: 500; font-size: 0.85rem; }
 .badge.live, .status.paid, .status.shipped { color: var(--ok); }
 .badge.connecting, .badge.reconnecting, .status.pending { color: var(--warn); }
 .status.cancelled { color: var(--danger); }
+main.wide { max-width: 1100px; }
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; align-items: start; }
+.column { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; display: grid; gap: 0.5rem; }
+.column h2 { margin: 0; font-size: 1rem; display: flex; justify-content: space-between; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.6rem; display: grid; gap: 0.25rem; }
+.card-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.card-actions button { padding: 0.2rem 0.5rem; font-size: 0.85rem; }

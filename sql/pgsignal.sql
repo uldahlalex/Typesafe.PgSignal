@@ -2,9 +2,10 @@
 --
 -- pgsignal_notify() sends every committed insert, update and delete on the one channel "pgsignal", as
 -- {"table": <name>, "new": <row or null>, "old": <row or null>}. Nothing is sent for a rolled-back transaction.
--- <name> is the trigger's argument: the name of the C# row type, because Subscribe<TRow> subscribes to typeof(TRow).Name.
+-- <name> is the trigger's argument: the name of the C# row type, because Watch<TRow, ...> gets the changes sent
+-- under typeof(TRow).Name.
 -- Without an argument it is the table's own name.
--- The server reads the rows into the type given to Subscribe<TRow> and runs each subscriber's filter on both, so it
+-- The server reads the rows into the type given to Watch<TRow, ...> and runs each stream's filter on both, so it
 -- can tell a subscriber that a row left its filter.
 --
 -- NOTIFY payloads must stay under 8000 bytes, and an update carries the row twice: fine for ordinary rows, not for

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The server half of Typesafe.PgSignal: one class, PgSignal<THub>. The client half is src/typesafe-pgsignal. -->
+  <!-- The server half of Typesafe.PgSignal: one class, PgSignal. The client half is src/typesafe-pgsignal. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -10,6 +10,8 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
+    <!-- [TranspilationSource] on LiveChange<T>, so the TypeScript generator (run with asm) writes it for the client. -->
+    <PackageReference Include="Tapper.Attributes" Version="1.15.1" />
   </ItemGroup>
 
 </Project>

@@ -4,6 +4,7 @@
 // @ts-nocheck
 import type { HubConnection, IStreamResult, Subject } from '@microsoft/signalr';
 import type { IOrderHub, IOrderReceiver } from './Server.Contracts';
+import type { LiveChange } from '../Typesafe.PgSignal';
 import type { OrderDto, OrderStatus } from '../Server.Contracts';
 
 
@@ -80,12 +81,12 @@ class IOrderHub_HubProxy implements IOrderHub {
     public constructor(private connection: HubConnection) {
     }
 
-    public readonly subscribeToAllOrders = async (): Promise<OrderDto[]> => {
-        return await this.connection.invoke("SubscribeToAllOrders");
+    public readonly watchAllOrders = (): IStreamResult<LiveChange<OrderDto>> => {
+        return this.connection.stream("WatchAllOrders");
     }
 
-    public readonly subscribeToOrdersWithStatus = async (status: OrderStatus): Promise<OrderDto[]> => {
-        return await this.connection.invoke("SubscribeToOrdersWithStatus", status);
+    public readonly watchOrdersWithStatus = (status: OrderStatus): IStreamResult<LiveChange<OrderDto>> => {
+        return this.connection.stream("WatchOrdersWithStatus", status);
     }
 
     public readonly createOrder = async (customerName: string, totalCents: number): Promise<number> => {
@@ -98,10 +99,6 @@ class IOrderHub_HubProxy implements IOrderHub {
 
     public readonly deleteOrder = async (id: number): Promise<void> => {
         return await this.connection.invoke("DeleteOrder", id);
-    }
-
-    public readonly do = async (): Promise<void> => {
-        return await this.connection.invoke("Do");
     }
 }
 
@@ -117,18 +114,9 @@ class IOrderReceiver_Binder implements ReceiverRegister<IOrderReceiver> {
 
     public readonly register = (connection: HubConnection, receiver: IOrderReceiver): Disposable => {
 
-        const __pgSignalUpsert = (...args: [string, OrderDto]) => receiver.pgSignalUpsert(...args);
-        const __pgSignalDelete = (...args: [string, OrderDto]) => receiver.pgSignalDelete(...args);
-        const __pgSignalResync = (...args: [string]) => receiver.pgSignalResync(...args);
 
-        connection.on("PgSignalUpsert", __pgSignalUpsert);
-        connection.on("PgSignalDelete", __pgSignalDelete);
-        connection.on("PgSignalResync", __pgSignalResync);
 
         const methodList: ReceiverMethod[] = [
-            { methodName: "PgSignalUpsert", method: __pgSignalUpsert },
-            { methodName: "PgSignalDelete", method: __pgSignalDelete },
-            { methodName: "PgSignalResync", method: __pgSignalResync }
         ]
 
         return new ReceiverMethodSubscription(connection, methodList);
