@@ -2,12 +2,12 @@
 
 -- ── Live data (Typesafe.PgSignal) ────────────────────────────────────────────────────────────────────────────────
 -- From the library (../sql/pgsignal.sql): sends {"table": ..., "new": row, "old": row} on channel "pgsignal" for every
--- committed change to a table that has the trigger below.
+-- committed change to a table that has the trigger below. "table" is the trigger's argument, the C# row type's name.
 CREATE FUNCTION pgsignal_notify() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     PERFORM pg_notify('pgsignal', json_build_object(
-        'table', TG_TABLE_NAME,
+        'table', COALESCE(TG_ARGV[0], TG_TABLE_NAME),
         'new', CASE WHEN TG_OP <> 'DELETE' THEN row_to_json(NEW) END,
         'old', CASE WHEN TG_OP <> 'INSERT' THEN row_to_json(OLD) END)::text);
     RETURN NULL;
@@ -26,6 +26,7 @@ CREATE TABLE orders (
     created_at    timestamptz  NOT NULL DEFAULT now()
 );
 
+-- 'Order' is the name of sqlc's row type, Db.Order: Subscribe<Db.Order> gets the changes sent under that name.
 CREATE TRIGGER orders_pgsignal
 AFTER INSERT OR UPDATE OR DELETE ON orders
-FOR EACH ROW EXECUTE FUNCTION pgsignal_notify();
+FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('Order');

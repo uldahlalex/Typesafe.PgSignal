@@ -12,9 +12,10 @@ server/
   Program.cs               SignalR + PgSignal<OrderHub> + CORS
 client/
   src/generated/           generated from Contracts/ by `bun run generate`
-  src/signal.ts            the connection and the typed hub proxy
-  src/Example.tsx          a live list (useLive with Do()) and a form that creates orders
+  src/signal.ts            the connection, the typed hub proxy, and on(): typed connection.on for IOrderReceiver
+  src/Example.tsx          a live list (on() + Do()) and a form that creates orders
 compose.yaml          Postgres on port 5433 with sql/schema.sql applied
+scripts/              pgschema: plan.sh / apply.sh make the database match sql/schema.sql, dump.sh prints it
 ```
 
 ## Run
@@ -31,17 +32,34 @@ Open two tabs, or change data with `docker compose exec postgres psql -U postgre
 
 | Changed | Run |
 |---|---|
-| `sql/schema.sql` | `docker compose down -v && docker compose up -d` (recreates the database), then the sqlc line below |
+| `sql/schema.sql` | `./scripts/plan.sh` to see the SQL, `./scripts/apply.sh` to run it (keeps the data), then the sqlc line below |
 | `sql/*.sql` | `docker run --rm -e SQLCCACHE=/cache -v ~/.cache/sqlc:/cache -v $PWD:/src -w /src sqlc/sqlc generate` (here) |
 | `server/Contracts/` | `bun run generate` in `client/` (the tool is in `dotnet-tools.json`; `dotnet tool restore` once) |
 | the library's TS (`../src/typesafe-pgsignal`) | `rm -rf node_modules/typesafe-pgsignal && bun install` in `client/` (Bun copies `file:` packages) |
 
+## The schema
+
+`sql/schema.sql` is the only description of the database: there are no migration files. To change the schema, edit
+it, and [pgschema](https://www.pgschema.com) works out the `ALTER`s by comparing the file with the database:
+
+```bash
+./scripts/plan.sh    # the SQL it would run; changes nothing
+./scripts/apply.sh   # shows the same plan, asks, and runs it in a transaction
+./scripts/dump.sh    # the schema the database has now, e.g. to spot changes made by hand
+```
+
+They run pgschema in Docker against the compose database (set `PGHOST`, `PGPORT`, ... for another). A fresh volume
+gets the file directly through `docker-entrypoint-initdb.d`, so both paths end at the same schema. pgschema can't
+rename: renaming a column or table in the file means drop and add, so the data in it is lost; do a rename by hand
+in psql first, then apply.
+
 ## Making another table live
 
 1. `sql/schema.sql`:
-   `CREATE TRIGGER x_pgsignal AFTER INSERT OR UPDATE OR DELETE ON x FOR EACH ROW EXECUTE FUNCTION pgsignal_notify();`
+   `CREATE TRIGGER x_pgsignal AFTER INSERT OR UPDATE OR DELETE ON x FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('X');`
+   (the argument is the name of sqlc's row type, `Db.X`)
 2. `sql/queries.sql`: a list query with `sqlc.embed(x)`; regenerate.
 3. `server/Contracts`: a `[TranspilationSource]` DTO and `Task<XDto[]> SubscribeToXs()` on the hub interface;
-   implement it in the hub with `signal.Subscribe<Db.X>(Context.ConnectionId, "x", XDto.From)`
+   implement it in the hub with `signal.Subscribe<Db.X>(Context.ConnectionId, XDto.From)`
    followed by the query.
 4. `bun run generate`, then `useLive(connection, hub, "subscribeToXs", () => hub.subscribeToXs())`.

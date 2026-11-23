@@ -14,7 +14,7 @@ public sealed class OrderHub(PgSignal<OrderHub> signal, Db.QueriesSql queries) :
 
     public async Task<OrderDto[]> SubscribeToAllOrders()
     {
-        signal.Subscribe<Db.Order>(Context.ConnectionId, "orders", OrderDto.From);
+        signal.Subscribe<Db.Order>(Context.ConnectionId, OrderDto.From);
         var rows = await queries.ListOrdersAsync(Context.ConnectionAborted);
         return [.. rows.Select(r => OrderDto.From(r.Order!.Value))];
     }
@@ -23,14 +23,14 @@ public sealed class OrderHub(PgSignal<OrderHub> signal, Db.QueriesSql queries) :
     {
         var dbStatus = status.ToDb();
         // `where` decides which changes this caller gets; the query below decides the snapshot. Keep them the same rule.
-        signal.Subscribe<Db.Order>(Context.ConnectionId, "orders", OrderDto.From, where: o => o.Status == dbStatus);
+        signal.Subscribe<Db.Order>(Context.ConnectionId, OrderDto.From, where: o => o.Status == dbStatus);
         var rows = await queries.ListOrdersByStatusAsync(new(dbStatus), Context.ConnectionAborted);
         return [.. rows.Select(r => OrderDto.From(r.Order!.Value))];
     }
 
     public Task Do()
     {
-        signal.Subscribe<Order>(Context.ConnectionId, "orders", OrderDto.From);
+        signal.Subscribe<Db.Order>(Context.ConnectionId, OrderDto.From);
         return Task.CompletedTask;
     }
 

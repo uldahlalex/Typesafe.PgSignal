@@ -1,5 +1,6 @@
 # The example's Postgres, with sql/schema.sql applied on first start. Port 5433 so it doesn't clash with a local
-# Postgres. To start over: docker compose down -v && docker compose up -d
+# Postgres. Later changes to sql/schema.sql: ./scripts/apply.sh (keeps the data).
+# To start over: docker compose down -v && docker compose up -d
 services:
   postgres:
     image: postgres:17-alpine

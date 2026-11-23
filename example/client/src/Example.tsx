@@ -1,18 +1,26 @@
-import { useState, type FormEvent } from "react";
-import { useLive } from "typesafe-pgsignal";
+import { useEffect, useState, type FormEvent } from "react";
 import type { OrderDto } from "./generated/Server.Contracts";
-import { connection, orderHub } from "./signal";
+import { connection, on, orderHub, started } from "./signal";
 
 // The smallest realtime component: subscribe with Do(), show every order change the server sends, create orders.
 // Do() returns no snapshot, so the list starts empty and fills with changes made after the page loaded.
 export default function Example() {
-  // "do" must be a method of orderHub, or this doesn't compile. Do() returns no snapshot, hence the empty list (typed,
-  // so the item type is known).
-  const orders = useLive(connection, orderHub, "do", async (): Promise<OrderDto[]> => {
-    await orderHub.do();
-    return [];
-  });
+  const [orders, setOrders] = useState<OrderDto[]>([]);
   const [error, setError] = useState("");
+
+  // What the server sends: a new or changed order, or a deleted one.
+  useEffect(() => on("pgSignalUpsert", (_subscription, order) =>
+    setOrders((list) => list.some((o) => o.id === order.id)
+      ? list.map((o) => (o.id === order.id ? order : o))
+      : [order, ...list])), []);
+  useEffect(() => on("pgSignalDelete", (_subscription, order) =>
+    setOrders((list) => list.filter((o) => o.id !== order.id))), []);
+
+  // Subscribe once connected, and again after a reconnect: the server forgets subscriptions of a lost connection.
+  useEffect(() => {
+    started.then(() => orderHub.do());
+    connection.onreconnected(() => orderHub.do());
+  }, []);
 
   async function onCreate(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

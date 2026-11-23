@@ -14,8 +14,9 @@ namespace Typesafe.PgSignal;
 /// The whole flow, in this file:
 /// 1. A hub method calls <see cref="Subscribe{TRow}"/>, which stores the subscription. That's all it does.
 /// 2. <see cref="ExecuteAsync"/> keeps one connection open with LISTEN pgsignal. The trigger in sql/pgsignal.sql sends
-///    {"table": ..., "new": row, "old": row} on that one channel for every committed change to every watched table.
-/// 3. <see cref="Dispatch"/> runs every subscription of that table: if the new row matches its filter the client gets
+///    {"table": ..., "new": row, "old": row} on that one channel for every committed change to every watched table,
+///    where "table" is the trigger's argument: the name of the row type, e.g. 'Order' for Db.Order.
+/// 3. <see cref="Dispatch"/> runs every subscription whose TRow has that name: if the new row matches its filter the client gets
 ///    an upsert, else if the old row matched the client gets a delete, else nothing.
 /// 4. If the connection breaks, it reconnects and tells every client to reload (resync): changes made while nobody
 ///    listened are lost.
@@ -48,14 +49,15 @@ public sealed class PgSignal<THub>(NpgsqlDataSource db, IHubContext<THub> hub, I
     private readonly List<Subscription> _subscriptions = [];
 
     /// <summary>
-    /// Sends the calling client every future change to the rows of <paramref name="table"/> that match
+    /// Sends the calling client every future change to the rows of type <typeparamref name="TRow"/> that match
     /// <paramref name="where"/>, as <paramref name="map"/>(row). Query the snapshot after this call. Replaces this
     /// connection's earlier subscription with the same name.
     /// </summary>
-    /// <param name="table">The table's name, as the trigger reports it (TG_TABLE_NAME), e.g. "orders".</param>
+    /// <typeparam name="TRow">The table's row type. Its name must be the trigger's argument:
+    /// Subscribe&lt;Db.Order&gt; gets the changes of the table whose trigger is pgsignal_notify('Order').</typeparam>
     /// <param name="name">Leave out: the calling hub method's name. The client matches changes by it.</param>
     public void Subscribe<TRow>(
-        string connectionId, string table, Func<TRow, object> map, Func<TRow, bool>? where = null,
+        string connectionId, Func<TRow, object> map, Func<TRow, bool>? where = null,
         [CallerMemberName] string name = "")
     {
         Message? Decide(RowChange change)
@@ -72,7 +74,7 @@ public sealed class PgSignal<THub>(NpgsqlDataSource db, IHubContext<THub> hub, I
             return null;
         }
 
-        var subscription = new Subscription(connectionId, name.ToLowerInvariant(), table, Decide);
+        var subscription = new Subscription(connectionId, name.ToLowerInvariant(), typeof(TRow).Name, Decide);
         lock (_lock)
         {
             _subscriptions.RemoveAll(s => s.ConnectionId == connectionId && s.Name == subscription.Name);

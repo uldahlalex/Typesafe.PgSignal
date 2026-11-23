@@ -9,7 +9,7 @@ reports every committed change with `NOTIFY`, and one class in your server `LIST
 public async Task<OrderDto[]> SubscribeToOrdersWithStatus(OrderStatus status)
 {
     var dbStatus = status.ToDb();
-    signal.Subscribe<Db.Order>(Context.ConnectionId, "orders", OrderDto.From,
+    signal.Subscribe<Db.Order>(Context.ConnectionId, OrderDto.From,
         where: o => o.Status == dbStatus);                                       // changes from now on
     var rows = await queries.ListOrdersByStatusAsync(new(dbStatus));            // the rows right now
     return [.. rows.Select(r => OrderDto.From(r.Order!.Value))];
@@ -37,8 +37,8 @@ compiler.
 
 ```
 any write (API, psql, ...) commits
-  -> trigger pgsignal_notify: pg_notify('pgsignal', {"table": "orders", "new": row, "old": row})
-  -> PgSignal<THub>: one connection, LISTEN pgsignal; for each subscription to that table it runs `where` on the
+  -> trigger pgsignal_notify: pg_notify('pgsignal', {"table": "Order", "new": row, "old": row})
+  -> PgSignal<THub>: one connection, LISTEN pgsignal; for each Subscribe<Db.Order> it runs `where` on the
      new and the old row:
        matches now                 -> PgSignalUpsert(subscription, map(new))
        matched before, not now     -> PgSignalDelete(subscription, map(old))    (deleted, or left the filter)
@@ -51,11 +51,13 @@ changes by the same name. So a hub method is subscribed with one set of argument
 
 ## Setup
 
-**Database.** Add the function from `sql/pgsignal.sql` to your schema, and a trigger per table:
+**Database.** Add the function from `sql/pgsignal.sql` to your schema, and a trigger per table. Its argument is the
+name of the table's C# row type (sqlc's `Db.Order` for `orders`), because `Subscribe<Db.Order>` subscribes to
+`typeof(Db.Order).Name`:
 
 ```sql
 CREATE TRIGGER orders_pgsignal AFTER INSERT OR UPDATE OR DELETE ON orders
-FOR EACH ROW EXECUTE FUNCTION pgsignal_notify();
+FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('Order');
 ```
 
 **Server.** Reference `src/Typesafe.PgSignal/Typesafe.PgSignal.csproj` (it brings Npgsql). Then:
@@ -104,9 +106,11 @@ Bun copies `file:` packages into `node_modules`, so after changing the library r
 
 ## Rules worth knowing
 
-- **One channel for everything.** The trigger puts the table name in the payload, and the server LISTENs on
-  `pgsignal` once, when it connects. So `Subscribe` only stores the subscription, and you name a *table*, never a
-  channel. The cost: every server instance receives every change to every watched table and drops what nobody
+- **One channel for everything.** The trigger puts the row type's name in the payload, and the server LISTENs on
+  `pgsignal` once, when it connects. So `Subscribe` only stores the subscription, and you name a *row type*, never a
+  channel.
+- **The trigger's argument must match the type's name.** Nothing checks it: if they differ (a typo, or a renamed
+  type), the subscription simply gets no changes. The cost: every server instance receives every change to every watched table and drops what nobody
   subscribed to. Irrelevant unless you have very high write volumes.
 - **Subscribe first, query second.** The server is already listening, so a change committed while the query runs
   arrives as a change. It may arrive *before* the snapshot; `useLive` holds such changes back and applies
