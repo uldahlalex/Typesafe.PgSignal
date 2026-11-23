@@ -60,7 +60,7 @@ CREATE TRIGGER orders_pgsignal AFTER INSERT OR UPDATE OR DELETE ON orders
 FOR EACH ROW EXECUTE FUNCTION pgsignal_notify('Order');
 ```
 
-**Server.** Reference `src/Typesafe.PgSignal/Typesafe.PgSignal.csproj` (it brings Npgsql). Then:
+**Server.** Reference `src/Typesafe.PgSignal/Typesafe.PgSignal.csproj` (it brings Npgsql and Tapper.Attributes). Then:
 
 ```csharp
 builder.Services.AddSingleton(NpgsqlDataSource.Create(connectionString));
@@ -112,7 +112,8 @@ Bun copies `file:` packages into `node_modules`, so after changing the library r
 - **Subscribe first, query second.** `Watch` adds the subscription before it runs `snapshot`, so a change committed
   while the query runs is not lost: it waits in the stream's queue and is sent after the snapshot.
 - **`where` and the query must select the same rows.** One is the rule for "from now on", the other for "right now";
-  nothing checks that they agree. `where` is also the place for authorization (`Context.User`).
+  nothing checks that they agree. `where` is also the place for authorization: read `Context.User` in the hub method
+  and use the result in `where` (the lambda runs later, for every change, outside the hub call).
 - **Rows travel in the NOTIFY payload,** which must stay under 8000 bytes, and an update carries the row twice. Fine
   for ordinary rows. Keep big text or json columns in a separate table without a trigger (a view doesn't help: Postgres
   has no AFTER triggers on views).
@@ -126,7 +127,9 @@ Bun copies `file:` packages into `node_modules`, so after changing the library r
 
 ## Not done yet
 
-- Tests for the library itself (the example was verified end to end: filters, leaving a filter, writes from psql,
-  constraint errors, and resync after killing the LISTEN connection).
+- Tests for the library itself (the example was verified end to end: two streams of the same method with different
+  filters, a row leaving one filter and entering the other, stopping a stream, and a fresh snapshot after killing the
+  LISTEN connection).
+- Whether the DevTools GUI (TypedSignalR.Client.DevTools, `/signalr-dev`) can call streaming methods.
 - Timestamps from a notification arrive as local `DateTime`s, from a query as UTC: the same instant, different offset
   in the JSON.

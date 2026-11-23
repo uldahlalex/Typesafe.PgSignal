@@ -1,5 +1,5 @@
--- Queries (used for the snapshots of the subscribe methods) return the full row through sqlc.embed, so they share
--- one row type, Db.Order, which is also the type changes arrive as (server/Tables.cs).
+-- Queries (used for the snapshots of the Watch* streams) return the full row through sqlc.embed, so they share
+-- one row type, Db.Order, which is also the type changes arrive as (Watch<Db.Order, ...> in server/OrderHub.cs).
 -- Commands return at most the new id or the number of affected rows (0 = not found).
 
 -- name: ListOrders :many

@@ -1,14 +1,15 @@
 # Typesafe.PgSignal example
 
-A live order list: database-first (SQL schema, sqlc), SignalR with a typed TypeScript client (TypedSignalR), and
+A live order board: database-first (SQL schema, sqlc), SignalR with a typed TypeScript client (TypedSignalR), and
 Typesafe.PgSignal for the live part. Everything here is app code; the library is in `../src`.
 
 ```
 sql/schema.sql        the database, incl. the pgsignal trigger
 sql/queries.sql       queries and commands (C# generated with sqlc into server/gen/Db)
 server/
-  Contracts/IOrderHub.cs   the API: [Hub] interface + the types it uses ([TranspilationSource])
-  OrderHub.cs              implements it: subscribe methods (queries) and commands
+  Contracts/IOrderHub.cs   the API: [Hub] interface + the types it uses ([TranspilationSource]), and an empty
+                           receiver interface that only the DevTools GUI (/signalr-dev) needs
+  OrderHub.cs              implements it: Watch* streams (queries) and commands
   Program.cs               SignalR + PgSignal + CORS
 client/
   src/generated/           generated from Contracts/ by `bun run generate`
@@ -26,7 +27,7 @@ cd server && dotnet run               # http://localhost:5080
 cd client && bun install && bun dev   # http://localhost:3000
 ```
 
-Open two tabs, or change data with `docker compose exec postgres psql -U postgres`: both lists follow.
+Open two tabs, or change data with `docker compose exec postgres psql -U postgres`: both boards follow.
 
 ## After changing...
 
